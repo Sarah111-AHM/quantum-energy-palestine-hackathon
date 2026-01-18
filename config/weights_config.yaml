@@ -1,1 +1,228 @@
+# weights_config.yaml - إعدادات أوزان نظام التقييم
 
+weights:
+  # الأوزان الأساسية لعوامل التقييم
+  scoring_factors:
+    
+    risk_factor:
+      base_weight: 0.35
+      adjustment_range: [0.2, 0.5]
+      description: |
+        Weight for risk assessment factor.
+        Higher weight means risk has more impact on final score.
+        Formula: benefit = 1 - risk_score
+      
+    access_factor:
+      base_weight: 0.25
+      adjustment_range: [0.1, 0.4]
+      description: |
+        Weight for accessibility factor.
+        Higher weight means accessibility has more impact.
+        Direct usage: access_score * weight
+      
+    priority_factor:
+      base_weight: 0.30
+      adjustment_range: [0.2, 0.5]
+      description: |
+        Weight for humanitarian priority factor.
+        Higher weight means priority has more impact.
+        Direct usage: priority_score * weight
+      
+    weather_factor:
+      base_weight: 0.10
+      adjustment_range: [0.05, 0.2]
+      description: |
+        Weight for weather conditions factor.
+        Calculated from temperature, wind, humidity.
+        Formula: weather_score * weight
+  
+  # أوزان التأثير حسب نوع الموقع
+  site_type_modifiers:
+    
+    hospital:
+      risk_multiplier: 1.1
+      priority_multiplier: 1.2
+      access_multiplier: 1.0
+      description: |
+        Hospitals are high priority but also high risk targets.
+        Increased priority weight for medical facilities.
+    
+    school:
+      risk_multiplier: 0.9
+      priority_multiplier: 1.1
+      access_multiplier: 1.0
+      description: |
+        Schools are important but may have different risk profile.
+        Slightly reduced risk consideration.
+    
+    refugee_camp:
+      risk_multiplier: 1.0
+      priority_multiplier: 1.3
+      access_multiplier: 0.9
+      description: |
+        Refugee camps are highest priority but may have access challenges.
+        Maximum priority multiplier.
+    
+    aid_center:
+      risk_multiplier: 0.8
+      priority_multiplier: 1.0
+      access_multiplier: 1.1
+      description: |
+        Aid centers are designed for accessibility.
+        Good access and moderate priority.
+    
+    water_station:
+      risk_multiplier: 0.7
+      priority_multiplier: 1.2
+      access_multiplier: 1.0
+      description: |
+        Water stations are critical infrastructure.
+        High priority with lower risk consideration.
+  
+  # أوزان حسب المنطقة الجغرافية
+  regional_modifiers:
+    
+    north_gaza:
+      risk_adjustment: +0.1
+      access_adjustment: -0.1
+      description: |
+        Northern areas have higher risk and lower access.
+        Based on recent conflict data.
+    
+    gaza_city:
+      risk_adjustment: +0.05
+      access_adjustment: +0.1
+      description: |
+        Urban center has better infrastructure but some risk.
+        Improved access in city center.
+    
+    central_gaza:
+      risk_adjustment: 0.0
+      access_adjustment: 0.0
+      description: |
+        Baseline values for central areas.
+        Standard risk and access levels.
+    
+    south_gaza:
+      risk_adjustment: +0.08
+      access_adjustment: -0.05
+      description: |
+        Southern border areas have specific challenges.
+        Moderate adjustments.
+  
+  # أوزان القيود في نظام التحسين
+  constraint_weights:
+    
+    k_selection_constraint:
+      base_weight: 2.0
+      adjustment_range: [0.5, 5.0]
+      description: |
+        Penalty weight for K-site selection constraint.
+        Ensures exactly K sites are selected.
+        Higher weight enforces constraint more strictly.
+    
+    distance_constraint:
+      base_weight: 1.5
+      adjustment_range: [0.5, 3.0]
+      description: |
+        Penalty weight for minimum distance constraint.
+        Ensures geographic diversity.
+        Adjust based on desired spacing.
+    
+    budget_constraint:
+      base_weight: 1.0
+      adjustment_range: [0.2, 2.0]
+      description: |
+        Penalty weight for budget constraint.
+        Controls cost considerations.
+        Set to 0 to disable budget constraint.
+  
+  # إعدادات خوارزمية تحسين الأوزان
+  optimization_settings:
+    
+    method: "evolutionary"
+    
+    evolutionary_algorithm:
+      population_size: 50
+      generations: 100
+      mutation_rate: 0.1
+      crossover_rate: 0.8
+      
+    objective_functions:
+      - name: "maximize_mean_score"
+        weight: 0.5
+        description: "Maximize average score across all sites"
+        
+      - name: "minimize_score_variance"
+        weight: 0.3
+        description: "Minimize variance in scores for fairness"
+        
+      - name: "maximize_high_scoring_sites"
+        weight: 0.2
+        description: "Maximize number of sites with score > 0.7"
+    
+    validation:
+      test_size: 0.2
+      cross_validation_folds: 5
+      random_state: 42
+  
+  # الأوزان الموصى بها بناءً على السيناريوهات
+  scenario_presets:
+    
+    humanitarian_focus:
+      risk_weight: 0.4
+      access_weight: 0.2
+      priority_weight: 0.35
+      weather_weight: 0.05
+      description: |
+        Focus on humanitarian needs and safety.
+        Highest weight on risk reduction and priority.
+        For emergency response scenarios.
+    
+    operational_efficiency:
+      risk_weight: 0.3
+      access_weight: 0.35
+      priority_weight: 0.25
+      weather_weight: 0.1
+      description: |
+        Focus on operational efficiency and access.
+        Higher weight on accessibility.
+        For logistics and distribution planning.
+    
+    balanced_approach:
+      risk_weight: 0.35
+      access_weight: 0.25
+      priority_weight: 0.30
+      weather_weight: 0.10
+      description: |
+        Balanced approach considering all factors.
+        Default recommended settings.
+        Suitable for general planning.
+    
+    weather_sensitive:
+      risk_weight: 0.3
+      access_weight: 0.25
+      priority_weight: 0.25
+      weather_weight: 0.2
+      description: |
+        Increased focus on weather conditions.
+        Important for seasonal operations.
+        For planning in adverse weather periods.
+  
+  # إعدادات حفظ وتحميل الأوزان
+  persistence:
+    auto_save: true
+    save_path: "config/saved_weights/"
+    format: "yaml"
+    versioning: true
+    max_versions: 10
+  
+  metadata:
+    creation_date: "2024-01-17"
+    last_modified: "2024-01-17"
+    author: "Humanitarian AI Team"
+    project: "Gaza Site Selection System"
+    notes: |
+      Weights are configurable based on operational needs.
+      Regular review and adjustment recommended.
+      Validate with domain experts for specific scenarios.
