@@ -1,1 +1,228 @@
+# quantum_params.yaml - إعدادات المحاكاة والتحسين الكمومي
 
+quantum_system:
+  # إعدادات المحاكي
+  simulator:
+    backend: "qasm_simulator"
+    provider: "qiskit_aer"
+    
+    performance:
+      shots: 1024
+      seed_simulator: 42
+      seed_transpiler: 42
+      optimization_level: 3
+      max_parallel_threads: 0  # 0 = auto
+    
+    noise_model:
+      enabled: false
+      type: "basic_device"
+      parameters:
+        gate_error_rate: 0.01
+        readout_error: 0.05
+        thermal_relaxation: true
+  
+  # إعدادات خوارزمية QAOA
+  qaoa_algorithm:
+    
+    basic_parameters:
+      reps: 2
+      initial_point: null  # null for random initialization
+      mixer: "x"
+      
+    optimizer_settings:
+      name: "COBYLA"
+      parameters:
+        maxiter: 100
+        tol: 0.0001
+        disp: true
+        catol: 0.0002
+      
+    alternative_optimizers:
+      - name: "SPSA"
+        parameters:
+          maxiter: 100
+          blocking: true
+          allowed_increase: 0.5
+          
+      - name: "NFT"
+        parameters:
+          maxiter: 50
+          ftol: 0.0001
+          
+      - name: "L_BFGS_B"
+        parameters:
+          maxiter: 150
+          ftol: 1e-7
+          maxfun: 15000
+  
+  # إعدادات تحويل QUBO
+  qubo_formulation:
+    
+    hamiltonian_construction:
+      method: "ising"
+      normalize: true
+      offset: 0.0
+      
+    penalty_scaling:
+      auto_scaling: true
+      scaling_factor: 1.0
+      max_penalty_ratio: 10.0
+      
+    matrix_properties:
+      enforce_symmetric: true
+      remove_small_values: true
+      small_value_threshold: 1e-10
+    
+    decomposition:
+      method: "pauli"
+      grouping: "default"
+      z2_symmetries: true
+  
+  # إعدادات حل QUBO البديلة
+  alternative_solvers:
+    
+    vqe_solver:
+      enabled: true
+      parameters:
+        ansatz: "TwoLocal"
+        optimizer: "SLSQP"
+        max_evals_grouped: 1
+        entanglement: "linear"
+        reps: 3
+        
+    exact_solver:
+      enabled: true
+      method: "numpy"
+      max_size: 20  # Maximum qubits for exact solver
+      
+    classical_solvers:
+      - name: "brute_force"
+        max_qubits: 25
+        
+      - name: "simulated_annealing"
+        parameters:
+          num_reads: 1000
+          num_sweeps: 1000
+          
+      - name: "tabu_search"
+        parameters:
+          timeout: 10
+          search_type: "tabu"
+  
+  # معايير التقارب والتوقف
+  convergence_criteria:
+    
+    energy_convergence:
+      tolerance: 1e-4
+      window_size: 5
+      relative: true
+      
+    parameter_convergence:
+      tolerance: 1e-3
+      check_frequency: 10
+      
+    iteration_limits:
+      max_iterations: 100
+      max_time_seconds: 3600
+      max_function_calls: 10000
+  
+  # إعدادات معالجة النتائج
+  results_processing:
+    
+    post_processing:
+      round_decimals: 4
+      remove_small_probabilities: true
+      probability_threshold: 0.001
+      
+    solution_selection:
+      method: "highest_probability"
+      alternatives:
+        - method: "energy_based"
+          energy_tolerance: 0.01
+        - method: "top_n"
+          n_solutions: 5
+      
+    validation:
+      check_feasibility: true
+      verify_constraints: true
+      tolerance: 0.01
+  
+  # إعدادات الأداء والذاكرة
+  performance_settings:
+    
+    resource_management:
+      max_memory_mb: 4096
+      max_cpu_cores: 4
+      cache_enabled: true
+      cache_size: 1000
+      
+    parallel_processing:
+      enabled: false
+      max_workers: 4
+      backend: "loky"
+      
+    optimization_levels:
+      level_1:  # Fastest, less accurate
+        transpiler_optimization: 1
+        approximation_degree: 1.0
+        
+      level_2:  # Balanced (default)
+        transpiler_optimization: 2
+        approximation_degree: 0.1
+        
+      level_3:  # Most accurate, slower
+        transpiler_optimization: 3
+        approximation_degree: 0.01
+  
+  # إعدادات التسجيل والمراقبة
+  monitoring:
+    
+    logging:
+      level: "INFO"
+      file: "logs/quantum_system.log"
+      console_output: true
+      
+    metrics_tracking:
+      track_energy: true
+      track_parameters: true
+      track_timing: true
+      track_memory: true
+      
+    visualization:
+      plot_convergence: true
+      plot_energy_landscape: false
+      plot_circuit: false
+      save_plots: true
+      plot_format: "png"
+      dpi: 300
+  
+  # إعدادات التكامل مع الأنظمة الأخرى
+  integration:
+    
+    classical_interface:
+      data_format: "json"
+      encoding: "utf-8"
+      compression: false
+      
+    api_endpoints:
+      solve_endpoint: "/api/quantum/solve"
+      status_endpoint: "/api/quantum/status"
+      results_endpoint: "/api/quantum/results"
+      
+    webhook_notifications:
+      enabled: false
+      url: ""
+      events: ["start", "complete", "error"]
+  
+  # الإصدار والتوافق
+  version_info:
+    config_version: "1.0.0"
+    qiskit_version: ">=0.44.0"
+    python_version: ">=3.8"
+    last_updated: "2024-01-17"
+    
+  notes: |
+    Quantum parameters configuration for humanitarian site selection.
+    Adjust parameters based on problem size and available resources.
+    For large problems (>50 sites), consider using higher performance settings.
+    Real quantum hardware requires different parameter tuning.
