@@ -1,1 +1,138 @@
+# settings.yaml - إعدادات مشروع اختيار المواقع الإنسانية
 
+project:
+  name: "Humanitarian Site Selection System"
+  version: "1.0.0"
+  description: "AI + Quantum optimization for humanitarian aid distribution in Gaza"
+  
+data:
+  sources:
+    - name: "synthetic_gaza_sites"
+      description: "Realistic synthetic data for Gaza locations"
+      format: "CSV"
+      encoding: "utf-8"
+    - name: "weather_simulation"
+      description: "Simulated weather data based on Gaza climate"
+      format: "CSV"
+  
+  paths:
+    raw_data: "data/raw/"
+    processed_data: "data/processed/"
+    results: "results/"
+  
+  default_num_sites: 50
+  
+scoring:
+  factors:
+    risk:
+      weight_range: [0.2, 0.5]
+      default_weight: 0.35
+      description: "Safety and security risk assessment"
+    
+    access:
+      weight_range: [0.1, 0.4]
+      default_weight: 0.25
+      description: "Accessibility and infrastructure assessment"
+    
+    priority:
+      weight_range: [0.2, 0.5]
+      default_weight: 0.30
+      description: "Humanitarian urgency and need assessment"
+    
+    weather:
+      weight_range: [0.05, 0.2]
+      default_weight: 0.10
+      description: "Weather conditions suitability"
+  
+  normalization:
+    method: "minmax"
+    range: [0, 1]
+  
+optimization:
+  constraints:
+    k_sites:
+      min: 1
+      max: 20
+      default: 5
+      description: "Number of sites to select"
+    
+    min_distance:
+      min: 1.0
+      max: 50.0
+      default: 5.0
+      unit: "km"
+      description: "Minimum distance between selected sites"
+    
+    budget:
+      min: 10000
+      max: 1000000
+      default: 500000
+      unit: "USD"
+      description: "Maximum total budget constraint"
+  
+quantum:
+  simulation:
+    backend: "qasm_simulator"
+    shots: 1024
+    max_iterations: 100
+    use_real_quantum: false
+    
+  qaoa:
+    reps_range: [1, 5]
+    default_reps: 2
+    optimizer: "COBYLA"
+    
+  qubo:
+    penalty_weights:
+      k_constraint: 2.0
+      distance_constraint: 1.5
+      budget_constraint: 1.0
+  
+visualization:
+  map:
+    center: [31.5, 34.466]
+    default_zoom: 11
+    tile_layer: "OpenStreetMap"
+    
+  colors:
+    risk_levels:
+      high: "#ff4d4d"
+      medium: "#ffa64d"
+      low: "#4dff4d"
+    selected_sites: "#4d4dff"
+    highlight: "#ffff4d"
+  
+  plot_settings:
+    figure_size: [12, 8]
+    dpi: 300
+    style: "seaborn"
+  
+performance:
+  caching:
+    enabled: true
+    max_cache_size: 1000
+    cache_ttl: 3600
+    
+  parallel_processing:
+    enabled: false
+    max_workers: 4
+    
+  logging:
+    level: "INFO"
+    file: "logs/project.log"
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+testing:
+  test_data_size: 20
+  validation_split: 0.2
+  random_seed: 42
+  
+system:
+  requirements:
+    python_version: ">=3.8"
+    memory_minimum: "4GB"
+    disk_space: "1GB"
+    
+  compatibility:
+    operating_systems: ["Windows", "macOS", "Linux"]
+    browsers: ["Chrome", "Firefox", "Safari"]
