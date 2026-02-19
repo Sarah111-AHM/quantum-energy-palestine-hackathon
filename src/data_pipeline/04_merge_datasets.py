@@ -1,67 +1,326 @@
-"""04_merge_datasets.py
-Merge everything into one master decision dataset
+"""
+Merge multiple datasets into master Gaza energy dataset.
 """
 
-import pandas as pd, numpy as np, os
+import pandas as pd
+import numpy as np
+import logging
+from typing import Optional, Dict, List
+from pathlib import Path
 from datetime import datetime
 
-def load_all_datasets():
-    print("Loading datasets...📦")
-    d={}
-    p_sites='data/processed/candidates_enhanced.csv'
-    if not os.path.exists(p_sites):print("✗ Enhanced sites missing");return None
-    d['sites']=pd.read_csv(p_sites);print(f"✓ Sites loaded:{len(d['sites'])}")
-    p_weather='data/processed/weather_summary.csv'
-    d['weather']=pd.read_csv(p_weather) if os.path.exists(p_weather) else None
-    print("✓ Weather loaded" if d['weather'] is not None else "⚠️ Weather missing")
-    p_dist='data/processed/distance_matrix.npy'
-    d['distances']=np.load(p_dist) if os.path.exists(p_dist) else None
-    print("✓ Distance matrix loaded" if d['distances'] is not None else "⚠️ Distance matrix missing")
-    return d
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def calculate_scores(df):
-    W={'risk':0.35,'access':0.25,'priority':0.30,'weather':0.10}
-    df['base_score']=(W['risk']*(1-df['base_risk_score'])+W['access']*df['base_access_score']+W['priority']*df['base_priority_score']).round(3)
-    df['total_score']=(df['base_score']*0.9+df['weather_score']*0.1).round(3) if 'weather_score' in df.columns else df['base_score']
-    df['rank']=df['total_score'].rank(ascending=False,method='min').astype(int)
-    return df
+class DatasetMerger:
+    """
+    Merge multiple data sources into master dataset.
+    """
+    
+    def __init__(self, data_dir: str = '../../data'):
+        """
+        Initialize merger.
+        
+        Args:
+            data_dir: Directory with data files
+        """
+        self.data_dir = Path(data_dir)
+        self.datasets = {}
+        
+    def load_all_datasets(self) -> Dict[str, pd.DataFrame]:
+        """
+        Load all available datasets.
+        
+        Returns:
+            Dictionary of dataset name to DataFrame
+        """
+        # Define expected datasets
+        expected = {
+            'energy': 'gaza_energy_data.csv',
+            'nasa': 'nasa_weather_data.csv',
+            'osm_power': 'osm_power.geojson',
+            'osm_roads': 'osm_highway.geojson',
+            'population': 'population.csv',
+            'risk_zones': 'risk_zones.geojson'
+        }
+        
+        for name, filename in expected.items():
+            file_path = self.data_dir / filename
+            if file_path.exists():
+                try:
+                    if filename.endswith('.geojson'):
+                        import geopandas as gpd
+                        df = gpd.read_file(file_path)
+                        # Convert to regular DataFrame
+                        if 'geometry' in df.columns:
+                            df['Latitude'] = df.geometry.y
+                            df['Longitude'] = df.geometry.x
+                            df = df.drop(columns='geometry')
+                    else:
+                        df = pd.read_csv(file_path)
+                    
+                    self.datasets[name] = df
+                    logger.info(f"Loaded {name}: {len(df)} rows")
+                except Exception as e:
+                    logger.error(f"Failed to load {name}: {e}")
+            else:
+                logger.warning(f"Dataset not found: {file_path}")
+        
+        return self.datasets
+    
+    def create_base_locations(self, n_sites: int = 45) -> pd.DataFrame:
+        """
+        Create base location grid for Gaza.
+        
+        Args:
+            n_sites: Number of sites to generate
+            
+        Returns:
+            DataFrame with base locations
+        """
+        # Gaza bounds
+        min_lat, max_lat = 31.25, 31.58
+        min_lon, max_lon = 34.20, 34.55
+        
+        # Generate grid points
+        n_per_side = int(np.sqrt(n_sites))
+        lats = np.linspace(min_lat, max_lat, n_per_side)
+        lons = np.linspace(min_lon, max_lon, n_per_side)
+        
+        points = []
+        for i, lat in enumerate(lats):
+            for j, lon in enumerate(lons):
+                region = self._get_region(lat)
+                points.append({
+                    'Region_ID': f"{region}_{i:02d}{j:02d}",
+                    'Latitude': round(lat, 6),
+                    'Longitude': round(lon, 6)
+                })
+        
+        df = pd.DataFrame(points[:n_sites])
+        logger.info(f"Created {len(df)} base locations")
+        return df
+    
+    def _get_region(self, latitude: float) -> str:
+        """Determine region based on latitude."""
+        if latitude > 31.50:
+            return "North_Gaza"
+        elif latitude > 31.45:
+            return "Gaza_City"
+        elif latitude > 31.38:
+            return "Deir_al_Balah"
+        elif latitude > 31.30:
+            return "Khan_Younis"
+        else:
+            return "Rafah"
+    
+    def merge_with_nasa(self, base_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Merge with NASA weather data.
+        
+        Args:
+            base_df: Base locations DataFrame
+            
+        Returns:
+            Merged DataFrame
+        """
+        if 'nasa' not in self.datasets:
+            logger.warning("NASA data not available, generating synthetic data")
+            return self._add_synthetic_nasa(base_df)
+        
+        nasa_df = self.datasets['nasa']
+        result = base_df.copy()
+        
+        # For each location, find nearest NASA grid point
+        from scipy.spatial import KDTree
+        
+        nasa_coords = nasa_df[['latitude', 'longitude']].values
+        tree = KDTree(nasa_coords)
+        
+        solar_values = []
+        wind_values = []
+        
+        for idx, row in base_df.iterrows():
+            dist, nasa_idx = tree.query([row['Latitude'], row['Longitude']])
+            solar_values.append(nasa_df.iloc[nasa_idx]['solar_irradiance'])
+            wind_values.append(nasa_df.iloc[nasa_idx]['wind_speed'])
+        
+        result['Solar_Irradiance'] = solar_values
+        result['Wind_Speed'] = wind_values
+        
+        logger.info("Merged with NASA data")
+        return result
+    
+    def _add_synthetic_nasa(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add synthetic NASA data."""
+        result = df.copy()
+        
+        # Solar irradiance (4.5-6.0 kWh/m²/day)
+        result['Solar_Irradiance'] = np.random.uniform(4.5, 6.0, len(df))
+        
+        # Wind speed (2.5-6.5 m/s) - higher near coast
+        is_coastal = df['Longitude'] < 34.35
+        result.loc[is_coastal, 'Wind_Speed'] = np.random.uniform(4.0, 6.5, is_coastal.sum())
+        result.loc[~is_coastal, 'Wind_Speed'] = np.random.uniform(2.5, 4.5, (~is_coastal).sum())
+        
+        logger.info("Added synthetic NASA data")
+        return result
+    
+    def add_risk_scores(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add risk scores based on location.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            DataFrame with risk scores
+        """
+        result = df.copy()
+        
+        if 'risk_zones' in self.datasets:
+            # Use actual risk zones
+            from .03_enrich_locations import enrich_with_risk_zones
+            result = enrich_with_risk_zones(result, str(self.data_dir))
+        else:
+            # Synthetic risk scores
+            # Higher risk in north and south borders
+            risk = []
+            for idx, row in df.iterrows():
+                if row['Latitude'] > 31.50 or row['Latitude'] < 31.30:
+                    risk.append(np.random.randint(6, 11))
+                else:
+                    risk.append(np.random.randint(2, 8))
+            
+            result['Risk_Score'] = risk
+        
+        # Add accessibility (80% accessible)
+        result['Accessibility'] = np.random.choice([0, 1], len(df), p=[0.2, 0.8])
+        
+        logger.info("Added risk scores and accessibility")
+        return result
+    
+    def add_grid_distances(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add distances to grid infrastructure.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            DataFrame with grid distances
+        """
+        result = df.copy()
+        
+        if 'osm_power' in self.datasets:
+            from .03_enrich_locations import LocationEnricher
+            enricher = LocationEnricher(str(self.data_dir))
+            enricher.infrastructure = self.datasets['osm_power']
+            result = enricher.calculate_grid_distances(result)
+        else:
+            # Synthetic distances (100-5000m)
+            result['Grid_Distance'] = np.random.randint(100, 5000, len(df))
+        
+        logger.info("Added grid distances")
+        return result
+    
+    def create_master_dataset(
+        self,
+        n_sites: int = 45,
+        save: bool = True
+    ) -> pd.DataFrame:
+        """
+        Create master dataset from all sources.
+        
+        Args:
+            n_sites: Number of sites to generate
+            save: Whether to save to CSV
+            
+        Returns:
+            Master DataFrame
+        """
+        logger.info("Creating master dataset...")
+        
+        # Load all available datasets
+        self.load_all_datasets()
+        
+        # Create base locations
+        df = self.create_base_locations(n_sites)
+        
+        # Merge with NASA data
+        df = self.merge_with_nasa(df)
+        
+        # Add risk scores
+        df = self.add_risk_scores(df)
+        
+        # Add grid distances
+        df = self.add_grid_distances(df)
+        
+        # Round values
+        df['Solar_Irradiance'] = df['Solar_Irradiance'].round(2)
+        df['Wind_Speed'] = df['Wind_Speed'].round(2)
+        
+        logger.info(f"Master dataset created with {len(df)} rows and {len(df.columns)} columns")
+        
+        # Save
+        if save:
+            output_path = self.data_dir / 'gaza_energy_data.csv'
+            df.to_csv(output_path, index=False)
+            logger.info(f"Saved to {output_path}")
+        
+        return df
 
-def add_distance_features(df,mat):
-    n=len(df);rows=[]
-    for i in range(n):
-        d=mat[i];od=d[d>0]
-        if len(od)>=5:m=np.sort(od)[:5];rows.append({'avg_distance_km':round(m.mean(),2),'nearest_distance_km':round(m[0],2)})
-        else:rows.append({'avg_distance_km':round(od.mean(),2) if len(od)>0 else 10,'nearest_distance_km':round(od.min(),2) if len(od)>0 else 10})
-    return pd.concat([df,pd.DataFrame(rows)],axis=1)
+def merge_all_datasets(data_dir: str = '../../data') -> Dict[str, pd.DataFrame]:
+    """
+    Quick function to load all datasets.
+    
+    Args:
+        data_dir: Data directory
+        
+    Returns:
+        Dictionary of datasets
+    """
+    merger = DatasetMerger(data_dir)
+    return merger.load_all_datasets()
 
-def add_derived_features(df):
-    df['cost_efficiency']=(df['population_served']/df['estimated_cost_usd']).round(6)
-    df['risk_priority_ratio']=(df['base_priority_score']/(df['base_risk_score']+0.01)).round(3)
-    df['readiness_index']=(df['base_access_score']*0.4+df['weather_score']*0.3+(1-df['base_risk_score'])*0.3).round(3)
-    df['score_band']=pd.cut(df['total_score'],bins=[0,0.4,0.6,0.8,1.0],labels=['low','medium','high','excellent'])
-    df['last_processed']=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    return df
+def create_master_dataset(
+    n_sites: int = 45,
+    data_dir: str = '../../data',
+    save: bool = True
+) -> pd.DataFrame:
+    """
+    Quick function to create master dataset.
+    
+    Args:
+        n_sites: Number of sites
+        data_dir: Data directory
+        save: Whether to save
+        
+    Returns:
+        Master DataFrame
+    """
+    merger = DatasetMerger(data_dir)
+    return merger.create_master_dataset(n_sites, save)
 
-def organize(df):
-    order=['site_id','name','region','zone','site_type','latitude','longitude','base_risk_score','risk_level','base_access_score','access_level','base_priority_score','weather_score','temp_mean','wind_max','base_score','total_score','rank','score_band','urgency_index','readiness_index','risk_priority_ratio','avg_distance_km','nearest_distance_km','population_served','estimated_cost_usd','cost_efficiency','is_critical','needs_special_access','data_source','creation_date','last_processed']
-    keep=[c for c in order if c in df.columns];extra=[c for c in df.columns if c not in keep]
-    return df[keep+extra]
-
-def main():
-    print("="*55);print("MASTER DATASET BUILD | Gaza AI Pipeline");print("="*55)
-    d=load_all_datasets()
-    if d is None:print("Pipeline stopped");return
-    m=d['sites'].copy()
-    if d['weather'] is not None:m=pd.merge(m,d['weather'],on='site_id',how='left')
-    else:m[['weather_score','temp_mean','wind_max']]=[0.7,20.0,6.0]
-    m=calculate_scores(m)
-    if d['distances'] is not None:m=add_distance_features(m,d['distances'])
-    m=add_derived_features(m);m=organize(m)
-    os.makedirs('data/processed',exist_ok=True)
-    m.to_csv('data/processed/master_dataset.csv',index=False,encoding='utf-8-sig')
-    m.to_excel('data/processed/master_dataset.xlsx',index=False)
-    print(f"✓ Master dataset ready | rows:{len(m)} cols:{len(m.columns)}")
-    print(f"Top 5 sites:\n{m.nlargest(5,'total_score')[['site_id','name','total_score','region','site_type']].to_string(index=False)}")
-
-if __name__=="__main__":
-    main()
+if __name__ == "__main__":
+    # Create master dataset
+    df = create_master_dataset(n_sites=45, save=True)
+    
+    print(f"Master dataset created with {len(df)} rows")
+    print("\nColumns:", df.columns.tolist())
+    print("\nFirst 5 rows:")
+    print(df.head())
+    
+    # Save summary
+    summary = {
+        'total_sites': len(df),
+        'accessible_sites': df['Accessibility'].sum(),
+        'avg_solar': df['Solar_Irradiance'].mean(),
+        'avg_wind': df['Wind_Speed'].mean(),
+        'avg_risk': df['Risk_Score'].mean(),
+        'avg_grid_distance': df['Grid_Distance'].mean()
+    }
+    
+    print("\nSummary:")
+    for key, value in summary.items():
+        print(f"  {key}: {value}")
